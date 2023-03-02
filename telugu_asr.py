@@ -13,10 +13,10 @@
 
 
 from datasets import load_dataset, load_metric
-
+import wandb
 import pandas as pd
 import numpy as np
-
+from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 import os
@@ -54,174 +54,25 @@ from transformers.trainer import (
 from transformers.trainer import is_datasets_available
 
 
-from transformers import TrainingArguments
+from transformers import TrainingArguments,Wav2Vec2Model,Wav2Vec2ForPreTraining
 
 
 
 from torch.utils.data import Dataset, DataLoader
 import torchaudio
+
+num_samples = 110
+
 abs_path_to_data = "/data/users/maqsood/main_exp/thesis/telugu_asr/te"
 os.environ["HF_DATASETS_CACHE"] = '/data/users/maqsood/hf_cache'
 os.environ['WANDB_API_KEY'] = '4974252525bb0812ae76d6ed03cfa6fb40c3fe3f'
 os.environ['WANDB_DIR'] = '/data/users/maqsood/hf_cache'
 os.environ['WANDB_CACHE_DIR'] = '/data/users/maqsood/hf_cache'
 os.environ['WANDB_CONFIG_DIR'] = '/data/users/maqsood/hf_cache'
-def normalizer(text):
-    # Use your custom normalizer
-    text = text.replace("\\n","\n")
-    text = ' '.join(text.split())
-    if re.search(r'''(&|[a-z]+)''',text,flags=re.IGNORECASE):
-        return None
-    text = re.sub(r'''%'''," శాతం ", text)
-    text = re.sub(r'''(/|-|_)'''," ", text)
-    text = re.sub("ై","ై", text)
-    text = text.strip()
-    return text
-
-train_df = pd.read_csv(f"{abs_path_to_data}/train.tsv", sep="\t")
-_train_df = train_df.copy()
-total_records = len(train_df)
-train_df["id"] = range(0, total_records)
-print(f"Step 0: {len(train_df)}")
-
-train_df["path"] = abs_path_to_data + "/clips/" + train_df["path"]
-train_df["status"] = train_df["path"].apply(lambda path: True if os.path.exists(path) else None)
-train_df = train_df.dropna(subset=["path"])
-train_df = train_df.drop("status", 1)
-print(f"Step 1: {len(train_df)}")
-
-train_df["sentence"] = train_df["sentence"].apply(lambda t: normalizer(t))
-train_df = train_df.dropna(subset=["sentence"])
-print(f"Step 2: {len(train_df)}")
-
-term_a = set(list(range(0, total_records)))
-term_b = set(train_df["id"].values.tolist())
-removed_items_train = [_train_df.iloc[index]["path"] for index in list(term_a - term_b)]
-train_df = train_df.reset_index(drop=True)
-train_df.head()
-
-print(f"Items to be removed {len(removed_items_train)}")
-
-test_df = pd.read_csv(f"{abs_path_to_data}/test.tsv", sep="\t")
-
-_test_df = test_df.copy()
-total_records = len(test_df)
-test_df["id"] = range(0, total_records)
-print(f"Step 0: {len(test_df)}")
-
-test_df["path"] = abs_path_to_data + "/clips/" + test_df["path"]
-test_df["status"] = test_df["path"].apply(lambda path: True if os.path.exists(path) else None)
-test_df = test_df.dropna(subset=["path"])
-test_df = test_df.drop("status", 1)
-print(f"Step 1: {len(test_df)}")
-
-test_df["sentence"] = test_df["sentence"].apply(lambda t: normalizer(t))
-test_df = test_df.dropna(subset=["sentence"])
-print(f"Step 2: {len(test_df)}")
-
-term_a = set(list(range(0, total_records)))
-term_b = set(test_df["id"].values.tolist())
-removed_items_test = [_test_df.iloc[index]["path"] for index in list(term_a - term_b)]
-test_df = test_df.reset_index(drop=True)
-test_df.head()
-
-print(f"Items to be removed {len(removed_items_test)}")
-
-removed_items = removed_items_train + removed_items_test
-
-for path in removed_items:
-    if os.path.exists(path):
-        os.remove(path)
-
-text = " ".join(train_df["sentence"].values.tolist() + test_df["sentence"].values.tolist())
-vocab = list(sorted(set(text)))
-
-print(len(vocab), vocab)
 
 
-
-train_df.to_csv("/data/users/maqsood/main_exp/thesis/telugu_asr/train.csv", sep="\t", encoding="utf-8", index=False)
-test_df.to_csv("/data/users/maqsood/main_exp/thesis/telugu_asr/test.csv", sep="\t", encoding="utf-8", index=False)
-
-print(train_df.shape)
-print(test_df.shape)
-
-open_slr_train = load_dataset("csv", data_files={"train": "/data/users/maqsood/main_exp/thesis/telugu_asr/train.csv"}, delimiter="\t")["train"]
-open_slr_test = load_dataset("csv", data_files={"test": "/data/users/maqsood/main_exp/thesis/telugu_asr/test.csv"}, delimiter="\t")["test"]
-
-print(open_slr_train)
-print(open_slr_test)
-
-chars_to_ignore_regex = '[\,\?\.\!\-\_\;\:\"\“\%\‘\”\।\’\']'
-
-def remove_special_characters(batch):
-    text = re.sub(chars_to_ignore_regex, '', batch["sentence"]).lower() + " "
-    text = normalizer(text)
-    batch["text"] = text
-    return batch
-
-open_slr_train = open_slr_train.map(remove_special_characters, remove_columns=["sentence"])
-open_slr_test = open_slr_test.map(remove_special_characters, remove_columns=["sentence"])
-
-def extract_all_chars(batch):
-    all_text = " ".join(batch["text"])
-    vocab = list(set(all_text))
-    return {"vocab": [vocab], "all_text": [all_text]}
-
-vocab_train = open_slr_train.map(extract_all_chars, batched=True, batch_size=-1, keep_in_memory=True, remove_columns=open_slr_train.column_names)
-vocab_test = open_slr_train.map(extract_all_chars, batched=True, batch_size=-1, keep_in_memory=True, remove_columns=open_slr_test.column_names)
-
-vocab_list = list(set(vocab_train["vocab"][0]) | set(vocab_test["vocab"][0]))
-
-vocab_dict = {v: k for k, v in enumerate(vocab_list)}
-vocab_dict
-
-vocab_dict["|"] = vocab_dict[" "]
-del vocab_dict[" "]
-
-vocab_dict["[UNK]"] = len(vocab_dict)
-vocab_dict["[PAD]"] = len(vocab_dict)
-len(vocab_dict)
-
-
-with open('vocab.json', 'w') as vocab_file:
-    json.dump(vocab_dict, vocab_file)
-
-# !mkdir -p /content/dataset
-
-trainset = []
-
-for item in tqdm(open_slr_train, position=0, total=len(open_slr_train)):
-    features = open_slr_train.features
-    data = {}
-    for key in features:
-        data[key] = item[key]
-    
-    trainset.append(data)
-
-trainset = pd.DataFrame(trainset)
-trainset.to_csv("/data/users/maqsood/main_exp/thesis/telugu_asr/dataset/train.csv", sep="\t")
-
-
-testset = []
-
-for item in tqdm(open_slr_test, position=0, total=len(open_slr_test)):
-    features = open_slr_test.features
-    data = {}
-    for key in features:
-        data[key] = item[key]
-    
-    testset.append(data)
-
-testset = pd.DataFrame(testset)
-testset.to_csv("/data/users/maqsood/main_exp/thesis/telugu_asr/dataset/test.csv", sep="\t")
-
-trainset.head()
-
-testset.head()
-
-save_dir = "/data/users/maqsood/main_exp/thesis/telugu_asr/wav2vec2-large-xlsr-telugu"
-# save_dir = "/content/wav2vec2-large-xlsr-turkish"
+save_dir = f"/data/users/maqsood/main_exp/thesis/telugu_asr/wav2vec2-large-xlsr-telugu-taskadapted_correct_validation_{num_samples}"
+load_dataset_path = "/data/corpora/openslr/telugu/processed"
 # !ls {save_dir}
 
 
@@ -260,30 +111,22 @@ if not os.path.exists(save_dir):
     processor.save_pretrained(save_dir)
     print("Saved!")
 
-open_slr_train[0]
-
-
-
-def speech_file_to_array_fn(file_path):
-    speech_array, _ = torchaudio.load(file_path)
-
-    speech_array = speech_array[0].numpy()
-    speech_array = librosa.resample(np.asarray(speech_array), 48_000, 16_000)
-    sampling_rate = 16_000
-
-    return speech_array, sampling_rate
-
-
-
-
-
-
 class OpenslrDataset(Dataset):
+    #create test and train splits
+    def create_splits(self,train_split=0.9):
+        train_dataset, test_dataset = train_test_split(self.data, test_size=1.0-train_split, random_state=42)
+        return train_dataset, test_dataset
 
-    def __init__(self, csv_file, root_dir, processor, column_names=None, sep="\t"):
+    def __init__(self, csv_file, root_dir, processor, column_names=None, sep="\t",split="train"):
         self.data = pd.read_csv(os.path.join(root_dir, csv_file), sep=sep)
+        #use only first 1000 samples
+        self.data = self.data[:num_samples]
         self.processor = processor
         self.column_names = column_names
+        if split == "train":
+            self.data , _ = self.create_splits(train_split=0.9)
+        elif split == "validation":
+            _, self.data = self.create_splits(train_split=0.9)
 
     def __len__(self):
         return len(self.data)
@@ -391,8 +234,8 @@ class DataCollatorCTCWithPadding:
 
 data_collator = DataCollatorCTCWithPadding(processor=processor, padding=True)
 
-train_dataset = OpenslrDataset("train.csv", "/data/users/maqsood/main_exp/thesis/telugu_asr/dataset/", processor=processor, column_names=["input_values", "labels"])
-test_dataset = OpenslrDataset("test.csv", "/data/users/maqsood/main_exp/thesis/telugu_asr/dataset/", processor=processor, column_names=["input_values", "labels"])
+train_dataset = OpenslrDataset("train.csv", load_dataset_path, processor=processor, column_names=["input_values", "labels"],split = "train")
+test_dataset = OpenslrDataset("train.csv", load_dataset_path, processor=processor, column_names=["input_values", "labels"],split = "validation")
 
 print(len(train_dataset))
 print(len(test_dataset))
@@ -418,8 +261,6 @@ def compute_metrics(pred):
     wer = wer_metric.compute(predictions=pred_str, references=label_str)
 
     return {"wer": wer}
-
-
 model = Wav2Vec2ForCTC.from_pretrained(
     "facebook/wav2vec2-large-xlsr-53" if not last_checkpoint else last_checkpoint, 
     attention_dropout=0.1,
@@ -433,11 +274,14 @@ model = Wav2Vec2ForCTC.from_pretrained(
     vocab_size=processor.tokenizer.vocab_size
 )
 
+#load the model using state_dict
+model.load_state_dict(torch.load("/data/users/maqsood/thesis/pretrained/wav2vec2-large-xlsr-53telugu_asrpretraining_on_telugu_task_adaptation.pt", map_location=torch.device('cpu')), strict=False)
 print(len(processor.tokenizer))
 print(processor.tokenizer.vocab_size)
 
 model.freeze_feature_extractor()
 
+tot = 3110*150
 
 training_args = TrainingArguments(
     # output_dir="/content/gdrive/MyDrive/wav2vec2-large-xlsr-turkish-demo",
@@ -447,7 +291,7 @@ training_args = TrainingArguments(
     per_device_train_batch_size=16,
     gradient_accumulation_steps=2,
     evaluation_strategy="steps",
-    num_train_epochs=150,
+    num_train_epochs=int(tot/num_samples),
     fp16=False,
     save_steps=400, # Just for demo, change it
     eval_steps=400, # Just for demo, change it
