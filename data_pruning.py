@@ -1,12 +1,13 @@
 import os
 os.environ["HF_DATASETS_CACHE"] = '/data/users/maqsood/hf_cache'
 from datasets import load_dataset, load_metric,concatenate_datasets,Dataset
-from transformers import AutoFeatureExtractor
-from transformers import Wav2Vec2ForPreTraining
+from transformers import Wav2Vec2FeatureExtractor
+from transformers import Wav2Vec2ForPreTraining,Wav2Vec2Processor
 from torch.utils.data import DataLoader
 import torch
 import numpy as np
-import skimage.measure
+import torchaudio
+import pandas as pd
 #import weights and bias
 import wandb
 import asyncio
@@ -31,7 +32,6 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 set_seed(42)
-batch_size = 64
 
 async def pruning_function(centroids,hidden_states,after_prune_percent,cluster_labels):
     after_prune = []
@@ -46,34 +46,33 @@ async def pruning_function(centroids,hidden_states,after_prune_percent,cluster_l
 
 
 
-df = pd.read_csv(f"{dataset_path}/processed/test.tsv", sep="\t")
+df = pd.read_csv(f"{dataset_path}/processed/test.csv", sep="\t")
 # df["path"] = f"{dataset_path}/processed/clips/" + df["path"]
 test_dataset = Dataset.from_pandas(df)
 model_checkpoint = "facebook/wav2vec2-large-xlsr-53"
 model = Wav2Vec2ForPreTraining.from_pretrained(model_checkpoint)
 model.config.output_hidden_states = True
-feature_extractor = AutoFeatureExtractor.from_pretrained(model_checkpoint,return_attention_mask=True)
-model.to("cuda")
+save_dir = "/data/users/maqsood/main_exp/thesis/telugu_asr/wav2vec2-large-xlsr-telugu-taskadapted_correct_validation"
+processor = Wav2Vec2Processor.from_pretrained(save_dir)
 resampler = torchaudio.transforms.Resample(48_000, 16_000)
-
+model.to("cuda")
 def speech_file_to_array_fn(batch):
     speech_array, sampling_rate = torchaudio.load(batch["path"])
-    batch["speech"] = resampler(speech_array).squeeze().numpy()
-    return batch
+    batch["speech"] = resampler(speech_array).squeeze()
+    return processor(batch["speech"], sampling_rate=16_000, padding=True)
 test_dataset = test_dataset.map(speech_file_to_array_fn)
-tets_loader = DataLoader(test_dataset, batch_size=8)
+test_loader = DataLoader(test_dataset, batch_size=1)
 # Preprocessing the datasets.
 # We need to read the aduio files as arrays
-for batch in tets_loader:
-    batch = {k: v.to(device) for k, v in batch.items()}
-    inputs = feature_extractor(batch["speech"], sampling_rate=16_000, return_tensors="pt", padding=True)
-    hidden_layer_append= torch.tensor([])
+hidden_layer_append= torch.tensor([])
+for batch in test_loader:
+    
     with torch.no_grad():
-        hidden_state = model(inputs.input_values.to("cuda"), attention_mask=inputs.attention_mask.to("cuda")).hidden_states[-1].to("cpu")
+        hidden_state = model(torch.tensor(batch["input_values"],dtype = torch.float).to("cuda"), attention_mask=torch.tensor(batch["attention_mask"],dtype = torch.float).to("cuda")).hidden_states[-1].to("cpu")
     
     hidden_state = hidden_state.mean(dim=1)
     hidden_state = hidden_state.reshape(hidden_state.shape[0], -1)
-    hidden_layer_append = torch.cat(hidden_layer_append,hidden_state)
+    hidden_layer_append = torch.cat((hidden_layer_append,hidden_state),0)
 kmeans = KMeans(n_clusters=5, random_state=0).fit(hidden_layer_append)
 #get centroids of the clusters
 centroids = kmeans.cluster_centers_
