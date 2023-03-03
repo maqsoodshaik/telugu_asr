@@ -3,7 +3,7 @@
 import torch
 from torch.utils.data import DataLoader
 import numpy as np
-from transformers import Wav2Vec2Config, Wav2Vec2Processor,Wav2Vec2ForPreTraining,AutoFeatureExtractor,get_linear_schedule_with_warmup, AdamW
+from transformers import Wav2Vec2Config, Wav2Vec2Processor,Wav2Vec2ForPreTraining,AutoFeatureExtractor,get_linear_schedule_with_warmup, AdamW,Wav2Vec2CTCTokenizer,Wav2Vec2FeatureExtractor
 from scipy.io.wavfile import write
 import pandas as pd
 from os import rename
@@ -17,9 +17,8 @@ import torchaudio
 import librosa
 # Add the directory containing mymodule to sys.path
 sys.path.append('/data/users/maqsood/main_exp/thesis/telugu_asr/')
-
+dataset_path = "/data/corpora/openslr/kannada/"
 from data_collator_ctc import DataCollatorForWav2Vec2Pretraining
-abs_path_to_data = "/data/users/maqsood/main_exp/thesis/telugu_asr/te"
 os.environ["HF_DATASETS_CACHE"] = '/data/users/maqsood/hf_cache'
 os.environ['WANDB_API_KEY'] = '4974252525bb0812ae76d6ed03cfa6fb40c3fe3f'
 os.environ['WANDB_DIR'] = '/data/users/maqsood/hf_cache'
@@ -80,8 +79,10 @@ class OpenslrDataset(Dataset):
         batch = self.prepare_dataset(batch, self.column_names)
 
         return batch
-save_dir = "/data/users/maqsood/main_exp/thesis/telugu_asr/wav2vec2-large-xlsr-telugu"
-processor = Wav2Vec2Processor.from_pretrained(save_dir)
+tokenizer = Wav2Vec2CTCTokenizer(f"{dataset_path}/vocab.json", unk_token="[UNK]", pad_token="[PAD]", word_delimiter_token="|")
+feature_extractor = Wav2Vec2FeatureExtractor(feature_size=1, sampling_rate=16000, padding_value=0.0, do_normalize=True, return_attention_mask=True)
+processor = Wav2Vec2Processor(feature_extractor=feature_extractor, tokenizer=tokenizer)
+
 #set seed for reproducibility
 def set_seed(seed):
     # Set the random seed manually for reproducibility.
@@ -114,12 +115,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 config = wandb.config
 config.dataset_name = "telugu_asr"
 config.epochs = 25
-config.batch_size = 16
-config.model = "pretraining_on_telugu_task_adaptation"
+config.batch_size = 2
+config.model = "pretraining_on_kannada_task_adaptation"
 config.lr = 3e-5
+config.mask_time_prob = 0.05
 #variables
 model_checkpoint = "facebook/wav2vec2-large-xlsr-53"
-model_name = model_checkpoint.split("/")[-1]+config.dataset_name+config.model
+model_name = model_checkpoint.split("/")[-1]+config.dataset_name+config.model+str(config.epochs)+"_epochs"+str(config.mask_time_prob)+"_mask_time_prob"
 list_datasets_train = []
 list_datasets_validation = []
 
@@ -127,15 +129,16 @@ list_datasets_validation = []
 
 config_name = Wav2Vec2Config()
 config_name.output_hidden_states=True
-model = Wav2Vec2ForPreTraining(config=config_name)
-# model = Wav2Vec2ForPreTraining.from_pretrained(model_checkpoint,config=config_name)
+# model = Wav2Vec2ForPreTraining(config=config_name)
+model = Wav2Vec2ForPreTraining.from_pretrained(model_checkpoint)#,config=config_name)
+model.config.mask_time_prob = config.mask_time_prob
 #load model from state dict
 # model.load_state_dict(torch.load("/pretrained/wav2vec2-basear-arde-deel-eles-esfr-frit-itpt-ptru-rutedexonly_pretraining.pt"))
 feature_extractor = AutoFeatureExtractor.from_pretrained(model_checkpoint,return_attention_mask=True)
 #loading dataset
 
-dataset_train = OpenslrDataset("train.csv", "/data/users/maqsood/main_exp/thesis/telugu_asr/dataset/", processor=processor, column_names=["input_values"],split="train")
-dataset_validation = OpenslrDataset("train.csv", "/data/users/maqsood/main_exp/thesis/telugu_asr/dataset/", processor=processor, column_names=["input_values"],split="validation")
+dataset_train = OpenslrDataset("train.csv",f"{dataset_path}/processed", processor=processor, column_names=["input_values"],split="train")
+dataset_validation = OpenslrDataset("train.csv", f"{dataset_path}/processed", processor=processor, column_names=["input_values"],split="validation")
 
 
 
@@ -159,7 +162,7 @@ dataset_validation = OpenslrDataset("train.csv", "/data/users/maqsood/main_exp/t
 # encoded_dataset_validation = dataset_validation.map(preprocess_function, remove_columns=["audio","label"], batched=True)
 # encoded_dataset_train.set_format("torch")
 # encoded_dataset_validation.set_format("torch")
-data_collator = DataCollatorForWav2Vec2Pretraining(model=model, feature_extractor=feature_extractor,padding='max_length',)
+data_collator = DataCollatorForWav2Vec2Pretraining(model=model, feature_extractor=feature_extractor,padding='max_length')
 train_dataloader = DataLoader(dataset_train, batch_size=config.batch_size,shuffle=True,drop_last=True,collate_fn=data_collator,)
 eval_dataloader = DataLoader(dataset_validation, batch_size=config.batch_size,collate_fn=data_collator,)
 #training

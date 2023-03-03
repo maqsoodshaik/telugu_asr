@@ -57,11 +57,11 @@ from transformers.trainer import is_datasets_available
 from transformers import TrainingArguments,Wav2Vec2Model,Wav2Vec2ForPreTraining
 
 
-
 from torch.utils.data import Dataset, DataLoader
 import torchaudio
-
-num_samples = 110
+from datasets import disable_caching
+disable_caching()
+# num_samples = 330
 
 abs_path_to_data = "/data/users/maqsood/main_exp/thesis/telugu_asr/te"
 os.environ["HF_DATASETS_CACHE"] = '/data/users/maqsood/hf_cache'
@@ -71,7 +71,7 @@ os.environ['WANDB_CACHE_DIR'] = '/data/users/maqsood/hf_cache'
 os.environ['WANDB_CONFIG_DIR'] = '/data/users/maqsood/hf_cache'
 
 
-save_dir = f"/data/users/maqsood/main_exp/thesis/telugu_asr/wav2vec2-large-xlsr-telugu-taskadapted_correct_validation_{num_samples}"
+save_dir = f"/data/users/maqsood/main_exp/thesis/telugu_asr/wav2vec2-large-xlsr-kannada-taskadapted"#_{num_samples}"
 load_dataset_path = "/data/corpora/openslr/telugu/processed"
 # !ls {save_dir}
 
@@ -87,7 +87,7 @@ print(last_checkpoint if last_checkpoint else 0)
 
 if not os.path.exists(save_dir):
     print("NotExist")
-    tokenizer = Wav2Vec2CTCTokenizer("/data/users/maqsood/main_exp/thesis/telugu_asr/vocab.json", unk_token="[UNK]", pad_token="[PAD]", word_delimiter_token="|")
+    tokenizer = Wav2Vec2CTCTokenizer(f"{load_dataset_path}/vocab.json", unk_token="[UNK]", pad_token="[PAD]", word_delimiter_token="|")
 else:
     tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(save_dir)
 
@@ -120,7 +120,7 @@ class OpenslrDataset(Dataset):
     def __init__(self, csv_file, root_dir, processor, column_names=None, sep="\t",split="train"):
         self.data = pd.read_csv(os.path.join(root_dir, csv_file), sep=sep)
         #use only first 1000 samples
-        self.data = self.data[:num_samples]
+        # self.data = self.data[:num_samples]
         self.processor = processor
         self.column_names = column_names
         if split == "train":
@@ -275,7 +275,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
 )
 
 #load the model using state_dict
-model.load_state_dict(torch.load("/data/users/maqsood/thesis/pretrained/wav2vec2-large-xlsr-53telugu_asrpretraining_on_telugu_task_adaptation.pt", map_location=torch.device('cpu')), strict=False)
+model.load_state_dict(torch.load("/data/users/maqsood/thesis/pretrained/wav2vec2-large-xlsr-53telugu_asrpretraining_on_kannada_task_adaptation25_epochs0.065_mask_time_prob.pt", map_location=torch.device('cpu')), strict=False)
 print(len(processor.tokenizer))
 print(processor.tokenizer.vocab_size)
 
@@ -291,7 +291,7 @@ training_args = TrainingArguments(
     per_device_train_batch_size=16,
     gradient_accumulation_steps=2,
     evaluation_strategy="steps",
-    num_train_epochs=int(tot/num_samples),
+    num_train_epochs=25,#int(tot/num_samples),
     fp16=False,
     save_steps=400, # Just for demo, change it
     eval_steps=400, # Just for demo, change it

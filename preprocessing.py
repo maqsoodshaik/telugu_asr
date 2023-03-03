@@ -48,8 +48,7 @@ from transformers import TrainingArguments,Wav2Vec2Model,Wav2Vec2ForPreTraining
 
 from torch.utils.data import DataLoader
 import torchaudio
-abs_path_to_data = "/data/users/maqsood/main_exp/thesis/telugu_asr/kannada/"
-dataset_path = "/data/corpora/openslr/telugu/"
+dataset_path = "/data/corpora/openslr/kannada/"
 def normalizer(text):
     # Use your custom normalizer
     text = text.replace("\\n","\n")
@@ -67,8 +66,6 @@ def normalizer_kannada(text):
     text = text.replace("\\n","\n")
     text = ' '.join(text.split())
     if re.search(r'''(&|[a-z]+)''',text,flags=re.IGNORECASE):
-        return None
-    if re.search(r'''[0-9]+''',text,flags=re.IGNORECASE):
         return None
     text = re.sub(r'''(/|-|_)'''," ", text)
     text = text.strip()
@@ -177,7 +174,7 @@ del vocab_dict[" "]
 vocab_dict["[UNK]"] = len(vocab_dict)
 vocab_dict["[PAD]"] = len(vocab_dict)
 len(vocab_dict)
-
+breakpoint()
 
 with open(f"{dataset_path}/vocab.json", 'w') as vocab_file:
     json.dump(vocab_dict, vocab_file)

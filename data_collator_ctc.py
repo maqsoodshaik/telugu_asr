@@ -44,7 +44,7 @@ class DataCollatorForWav2Vec2Pretraining:
             features,
             padding=self.padding,
             pad_to_multiple_of=self.pad_to_multiple_of,
-            max_length=5*16000,
+            max_length= 16000*15,
             truncation = True,
             return_tensors="pt",
         )
