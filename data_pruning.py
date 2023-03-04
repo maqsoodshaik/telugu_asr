@@ -46,7 +46,7 @@ async def pruning_function(centroids,hidden_states,after_prune_percent,cluster_l
 
 
 
-df = pd.read_csv(f"{dataset_path}/processed/test.csv", sep="\t")
+df = pd.read_csv(f"{dataset_path}/processed/train.csv", sep="\t")
 # df["path"] = f"{dataset_path}/processed/clips/" + df["path"]
 test_dataset = Dataset.from_pandas(df)
 model_checkpoint = "facebook/wav2vec2-large-xlsr-53"
