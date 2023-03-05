@@ -2,7 +2,7 @@ import os
 os.environ["HF_DATASETS_CACHE"] = '/data/users/maqsood/hf_cache'
 from datasets import load_dataset, load_metric,concatenate_datasets,Dataset
 from transformers import Wav2Vec2FeatureExtractor
-from transformers import Wav2Vec2ForPreTraining,Wav2Vec2Processor
+from transformers import Wav2Vec2ForPreTraining,Wav2Vec2Processor,Wav2Vec2FeatureExtractor,Wav2Vec2CTCTokenizer
 from torch.utils.data import DataLoader
 import torch
 import numpy as np
@@ -41,7 +41,7 @@ async def pruning_function(centroids,hidden_states,after_prune_percent,cluster_l
         threshold = np.percentile(distances, after_prune_percent)
         within_threshold = np.where(distances <= threshold)
         after_prune.extend(within_threshold[0])
-    with open(f"/data/users/maqsood/main_exp/thesis/telugu_asr/sample_pruning/after_prune_{after_prune_percent}_model_name.pkl", "wb") as f:
+    with open(f"/data/users/maqsood/main_exp/thesis/telugu_asr/sample_pruning/after_prune_{after_prune_percent}_telugu_task_adapted.pkl", "wb") as f:
         pickle.dump(after_prune, f)
 
 
@@ -52,8 +52,12 @@ test_dataset = Dataset.from_pandas(df)
 model_checkpoint = "facebook/wav2vec2-large-xlsr-53"
 model = Wav2Vec2ForPreTraining.from_pretrained(model_checkpoint)
 model.config.output_hidden_states = True
-save_dir = "/data/users/maqsood/main_exp/thesis/telugu_asr/wav2vec2-large-xlsr-telugu-taskadapted_correct_validation"
-processor = Wav2Vec2Processor.from_pretrained(save_dir)
+
+model.load_state_dict(torch.load("/data/users/maqsood/thesis/pretrained/wav2vec2-large-xlsr-53telugu_asrpretraining_on_telugu_task_adaptation.pt", map_location=torch.device('cpu')), strict=False)
+load_dataset_path = "/data/corpora/openslr/telugu/processed"
+tokenizer = Wav2Vec2CTCTokenizer(f"{load_dataset_path}/vocab.json", unk_token="[UNK]", pad_token="[PAD]", word_delimiter_token="|")
+feature_extractor = Wav2Vec2FeatureExtractor(feature_size=1, sampling_rate=16000, padding_value=0.0, do_normalize=True, return_attention_mask=True)
+processor = Wav2Vec2Processor(feature_extractor=feature_extractor, tokenizer=tokenizer)
 resampler = torchaudio.transforms.Resample(48_000, 16_000)
 model.to("cuda")
 def speech_file_to_array_fn(batch):
