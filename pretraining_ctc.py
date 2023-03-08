@@ -17,10 +17,11 @@ import torchaudio
 import librosa
 # Add the directory containing mymodule to sys.path
 sys.path.append('/data/users/maqsood/main_exp/thesis/telugu_asr/')
+
+dataset_path = "/data/corpora/openslr/telugu/"
 from datasets import disable_caching
 disable_caching()
 from data_collator_ctc import DataCollatorForWav2Vec2Pretraining
-abs_path_to_data = "/data/users/maqsood/main_exp/thesis/telugu_asr/te"
 os.environ["HF_DATASETS_CACHE"] = '/data/users/maqsood/hf_cache'
 os.environ['WANDB_API_KEY'] = '4974252525bb0812ae76d6ed03cfa6fb40c3fe3f'
 os.environ['WANDB_DIR'] = '/data/users/maqsood/hf_cache'
@@ -81,10 +82,10 @@ class OpenslrDataset(Dataset):
         batch = self.prepare_dataset(batch, self.column_names)
 
         return batch
-load_dataset_path = "/data/corpora/openslr/telugu/processed"
-tokenizer = Wav2Vec2CTCTokenizer(f"{load_dataset_path}/vocab.json", unk_token="[UNK]", pad_token="[PAD]", word_delimiter_token="|")
+tokenizer = Wav2Vec2CTCTokenizer(f"{dataset_path}/vocab.json", unk_token="[UNK]", pad_token="[PAD]", word_delimiter_token="|")
 feature_extractor = Wav2Vec2FeatureExtractor(feature_size=1, sampling_rate=16000, padding_value=0.0, do_normalize=True, return_attention_mask=True)
 processor = Wav2Vec2Processor(feature_extractor=feature_extractor, tokenizer=tokenizer)
+
 #set seed for reproducibility
 def set_seed(seed):
     # Set the random seed manually for reproducibility.
@@ -137,8 +138,8 @@ model.load_state_dict(torch.load("/data/users/maqsood/thesis/pretrained/wav2vec2
 feature_extractor = AutoFeatureExtractor.from_pretrained(model_checkpoint,return_attention_mask=True)
 #loading dataset
 
-dataset_train = OpenslrDataset("train.csv", f"{load_dataset_path}", processor=processor, column_names=["input_values"],split="train")
-dataset_validation = OpenslrDataset("train.csv", f"{load_dataset_path}", processor=processor, column_names=["input_values"],split="validation")
+dataset_train = OpenslrDataset("train.csv", f"{dataset_path}/processed", processor=processor, column_names=["input_values"],split="train")
+dataset_validation = OpenslrDataset("train.csv", f"{dataset_path}/processed", processor=processor, column_names=["input_values"],split="validation")
 
 
 
